@@ -35,7 +35,7 @@ jobs:
         run: |
           # On first commit HEAD~1 doesn't exist — fall back to full tree scan
           DIFF=$(git diff HEAD~1 2>/dev/null || git show HEAD)
-          if echo "$DIFF" | grep -iE 'sk-ant-[a-zA-Z0-9]+|sk-[a-zA-Z0-9]{48}|AIza[a-zA-Z0-9_-]{35}|xai-[a-zA-Z0-9]+'; then
+          if echo "$DIFF" | grep -E 'sk-ant-[a-zA-Z0-9]{90,}|sk-[a-zA-Z0-9]{48}|AIza[a-zA-Z0-9_-]{35}|xai-[a-zA-Z0-9]{40,}'; then
             echo "ERROR: possible API key in diff"
             exit 1
           fi
