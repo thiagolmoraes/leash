@@ -1,0 +1,92 @@
+- required_engine_version: 0.36.0
+
+# ── Macro: identify agent processes ─────────────────────────────────────────
+- macro: agent_proc
+  condition: >
+    container.name = "agents"
+
+# ── Rule 1: Read sensitive credential files ──────────────────────────────────
+- rule: Agent reads sensitive credentials
+  desc: Agent process accessed SSH keys, AWS credentials, GCP tokens, or .env files
+  condition: >
+    agent_proc and
+    open_read and
+    (
+      fd.name startswith /home/agent/.ssh/ or
+      fd.name startswith /home/agent/.aws/ or
+      fd.name startswith /home/agent/.config/gcloud/ or
+      fd.name glob "**/.env*" or
+      fd.name glob "**/*.pem" or
+      fd.name glob "**/*.key"
+    )
+  output: >
+    Agent read sensitive file (user=%user.name proc=%proc.name file=%fd.name
+    cmdline=%proc.cmdline container=%container.name)
+  priority: CRITICAL
+  tags: [exfiltration, credentials]
+
+# ── Rule 2: Outbound network NOT via proxy ───────────────────────────────────
+- rule: Agent direct outbound connection (proxy bypass attempt)
+  desc: Agent container made TCP connect not destined for proxy (172.x:8080)
+  condition: >
+    container.name = "agents" and
+    evt.type = connect and
+    fd.typechar = 4 and
+    not fd.rip in (127.0.0.1) and
+    not (fd.rport = 8080 and fd.rnet = "172.16.0.0/12")
+  output: >
+    Agent direct outbound (user=%user.name proc=%proc.name dst=%fd.rip:%fd.rport
+    cmdline=%proc.cmdline container=%container.name)
+  priority: CRITICAL
+  tags: [network, exfiltration, bypass]
+
+# ── Rule 3: Unexpected network binary spawned ────────────────────────────────
+- rule: Agent spawns network tool
+  desc: Agent spawned nc, ncat, ssh, scp, ftp, wget, curl outside expected use
+  condition: >
+    agent_proc and
+    spawned_process and
+    proc.name in (nc, ncat, netcat, ssh, scp, sftp, ftp, wget, curl, socat, nmap)
+  output: >
+    Agent spawned network binary (proc=%proc.name cmdline=%proc.cmdline
+    parent=%proc.pname container=%container.name)
+  priority: WARNING
+  tags: [network, lateral-movement]
+
+# ── Rule 4: Write outside workspace or /tmp ──────────────────────────────────
+- rule: Agent writes outside workspace
+  desc: Agent wrote a file outside /workspace or /tmp (possible exfil staging)
+  condition: >
+    agent_proc and
+    (evt.type in (open, openat, openat2, creat)) and
+    evt.is_open_write = true and
+    not fd.name startswith /workspace and
+    not fd.name startswith /tmp and
+    not fd.name startswith /proc and
+    not fd.name startswith /dev and
+    not fd.name startswith /home/agent/.npm and
+    not fd.name startswith /home/agent/.cache and
+    not fd.name startswith /home/agent/.config and
+    not fd.name startswith /home/agent/.local and
+    not fd.name startswith /home/agent/.claude and
+    not fd.name startswith /logs
+  output: >
+    Agent wrote outside workspace (proc=%proc.name file=%fd.name
+    cmdline=%proc.cmdline container=%container.name)
+  priority: WARNING
+  tags: [filesystem, exfiltration]
+
+# ── Rule 5: Shell spawned interactively (not by make shell) ──────────────────
+- rule: Unexpected interactive shell in agent container
+  desc: bash/sh/zsh spawned with a TTY by a non-expected parent
+  condition: >
+    container.name = "agents" and
+    spawned_process and
+    proc.name in (bash, sh, zsh, fish) and
+    proc.tty != 0 and
+    not proc.pname in (entrypoint.sh, make, docker)
+  output: >
+    Unexpected shell in agent container (proc=%proc.name tty=%proc.tty
+    parent=%proc.pname cmdline=%proc.cmdline)
+  priority: NOTICE
+  tags: [shell]

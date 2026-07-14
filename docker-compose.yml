@@ -1,0 +1,77 @@
+services:
+
+  # ── Proxy (mitmproxy) ────────────────────────────────────────────────────
+  proxy:
+    build: ./proxy
+    container_name: proxy
+    restart: unless-stopped
+    networks:
+      jail:
+        aliases: [proxy]
+      egress: {}
+    ports:
+      - "8081:8081"   # mitmweb UI — forwarded to macOS host via Lima
+    volumes:
+      - mitm-certs:/certs      # persisted CA + state
+      - ./logs:/logs
+      - ./proxy/policy.yaml:/app/policy.yaml:ro   # hot-reload: restart proxy only
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  # ── Agents (all 4 CLIs) ──────────────────────────────────────────────────
+  agents:
+    build: ./agents
+    container_name: agents
+    restart: "no"
+    networks:
+      - jail                   # ONLY jail — no direct egress
+    volumes:
+      - ./workspace:/workspace
+      - ./logs:/logs
+      - mitm-certs:/certs:ro   # read mitm CA cert for entrypoint install
+    env_file:
+      - .env                   # ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY, XAI_API_KEY
+    environment:
+      - HTTP_PROXY=http://proxy:8080
+      - HTTPS_PROXY=http://proxy:8080
+      - NO_PROXY=localhost,127.0.0.1
+    depends_on:
+      - proxy
+    # Keep alive for interactive use: `make shell`
+    command: ["sleep", "infinity"]
+
+  # ── Falco (syscall monitor) ──────────────────────────────────────────────
+  falco:
+    image: falcosecurity/falco:latest
+    container_name: falco
+    restart: unless-stopped
+    privileged: true
+    networks:
+      - jail
+    pid: host
+    volumes:
+      - /var/run/docker.sock:/host/var/run/docker.sock:ro
+      - /proc:/host/proc:ro
+      - /dev:/host/dev:ro
+      - /sys/kernel/debug:/sys/kernel/debug:ro
+      - ./falco/rules.local.yaml:/etc/falco/rules.d/rules.local.yaml:ro
+      - ./logs:/logs
+    environment:
+      - FALCO_HOSTNAME=agent-lab
+      - HOST_ROOT=/host
+    command:
+      - /usr/bin/falco
+      - --option=engine.kind=modern_ebpf
+      - --option=json_output=true
+      - --option=file_output.enabled=true
+      - --option=file_output.filename=/logs/falco.jsonl
+      - --option=log_stderr=true
+
+networks:
+  jail:
+    internal: true    # no direct egress from this network — only via proxy
+  egress:
+    driver: bridge
+
+volumes:
+  mitm-certs:

@@ -1,0 +1,40 @@
+# Proxy egress policy
+# mode: enforce  → block + log anything not in allow list
+# mode: observe  → log only, nothing blocked (use for initial profiling)
+mode: enforce
+
+# One entry per allowed host (exact or suffix match with leading dot)
+allow:
+  # ── Claude Code ─────────────────────────────────────────────────────────
+  - api.anthropic.com
+  - platform.claude.com
+  - statsig.anthropic.com
+  - sentry.io        # crash reporting (common to many CLIs)
+
+  # ── OpenAI Codex ────────────────────────────────────────────────────────
+  - api.openai.com
+  - o1.openai.com
+
+  # ── Gemini CLI ──────────────────────────────────────────────────────────
+  - generativelanguage.googleapis.com
+  - oauth2.googleapis.com
+  - accounts.google.com
+  - cloudcode-pa.googleapis.com
+  - googleapis.com
+
+  # ── Grok (xAI) ──────────────────────────────────────────────────────────
+  - api.x.ai
+
+  # ── Shared infra ────────────────────────────────────────────────────────
+  - registry.npmjs.org
+  - github.com
+  - objects.githubusercontent.com
+  - raw.githubusercontent.com
+  - codeload.github.com
+  - api.github.com
+
+  # ── TLS / PKI ────────────────────────────────────────────────────────────
+  - ocsp.digicert.com
+  - ocsp.pki.goog
+  - crl.pki.goog
+  - pki.goog

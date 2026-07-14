@@ -1,0 +1,69 @@
+# Lima VM: agent-lab
+# macOS arm64, Virtualization.framework (vz), Ubuntu 24.04
+# Network: vzNAT (no socket_vmnet required)
+# Mount: only ~/Documents/sandbox-AI (rw) — rest of host invisible
+vmType: vz
+rosetta:
+  enabled: false
+
+images:
+  - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img"
+    arch: aarch64
+
+cpus: 4
+memory: 8GiB
+disk: 40GiB
+
+mounts:
+  - location: "~/Documents/sandbox-AI"
+    mountPoint: "/sandbox-AI"
+    writable: true
+
+# vzNAT: built-in NAT via Virtualization.framework, no socket_vmnet needed
+networks:
+  - vzNAT: true
+
+# Forward mitmweb port to macOS host
+portForwards:
+  - guestPort: 8081
+    hostPort: 8081
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux
+      export DEBIAN_FRONTEND=noninteractive
+
+      # Docker
+      apt-get update -y
+      apt-get install -y ca-certificates curl gnupg lsb-release
+      install -m 0755 -d /etc/apt/keyrings
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+      chmod a+r /etc/apt/keyrings/docker.gpg
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+        > /etc/apt/sources.list.d/docker.list
+      apt-get update -y
+      apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+      systemctl enable docker
+      systemctl start docker
+
+      # Allow the non-root user (UID 501 = lima default) to use docker
+      LIMA_USER=$(getent passwd 501 | cut -d: -f1)
+      usermod -aG docker "$LIMA_USER"
+
+      # Ensure logs dir is writable
+      mkdir -p /sandbox-AI/logs
+      chmod 777 /sandbox-AI/logs
+
+probes:
+  - script: |
+      #!/bin/bash
+      set -eux
+      docker info
+    hint: "Waiting for Docker to be ready in Lima VM"
+
+hostResolver:
+  hosts:
+    host.lima.internal: host-gateway
