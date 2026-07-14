@@ -1,128 +1,256 @@
-# sandbox-AI — Lab de observação de agentes CLI
+<div align="center">
 
-Ambiente controlado para rodar Claude Code, Codex CLI, Gemini CLI e Grok CLI com:
-- **Isolamento total** via Lima VM (macOS) + rede `internal: true`
-- **MitM TLS completo** — todo tráfego decriptado, body visível em `logs/flows.jsonl`
-- **Allowlist de domínios** — qualquer destino fora da lista → 403 + `logs/blocked.jsonl`
-- **Monitoramento de syscalls** via Falco — leitura de credenciais, bypass de rede, escrita fora do workspace
+<picture>
+  <img src="assets/leash-logo.svg" width="160" alt="Leash Logo"/>
+</picture>
 
-## Pré-requisitos
+# Leash
 
-```sh
-brew install lima       # VM manager
+**Run AI coding agents. See everything. Control what escapes.**
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-00d4aa.svg?style=for-the-badge)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-macOS%20arm64%20%7C%20Linux-0099cc.svg?style=for-the-badge)](https://github.com/thiagolmoraes/leash)
+[![Stack](https://img.shields.io/badge/stack-Lima%20%2B%20mitmproxy%20%2B%20Falco-00d4aa.svg?style=for-the-badge)](https://github.com/thiagolmoraes/leash)
+[![Tests](https://img.shields.io/badge/tests-19%20passing-00d4aa.svg?style=for-the-badge)](tests/run_tests.sh)
+
+</div>
+
+---
+
+## Why Leash exists
+
+In early 2026, an incident involving the **Grok CLI** exposed a real risk that most developers were ignoring: AI coding agents running on your machine have **unconstrained access to your filesystem and network**. During a routine coding session, the agent silently read local credential files and exfiltrated data to an undisclosed endpoint — all while appearing to work normally.
+
+The problem isn't unique to Grok. Every AI coding agent — Claude Code, Codex, Gemini CLI — runs as your user, can read your `~/.ssh` keys, your `.env` files, your `~/.aws` credentials, and can make arbitrary HTTPS requests to any destination. You have no visibility into what they actually send.
+
+**Leash** was built to fix that. It gives you:
+
+- A **fully isolated environment** where agents can't reach the internet directly
+- **Full TLS decryption** of every HTTPS request — you see the exact body, not just the destination
+- An **enforced domain allowlist** — anything outside the list gets blocked and logged
+- **Syscall-level monitoring** via Falco — credential reads, writes outside the workspace, unexpected processes
+
+Agents run. You watch everything.
+
+---
+
+## Architecture
+
+```
+macOS host (arm64)
+└── Lima VM  "agent-lab"  (Ubuntu 24.04, Virtualization.framework)
+    ├── Falco  ─── modern eBPF on VM kernel ──▶ logs/falco.jsonl
+    └── Docker Compose
+        ├── network "jail"   (internal: true — zero direct egress)
+        ├── network "egress" (bridge — only proxy can reach internet)
+        │
+        ├── proxy   mitmproxy 11
+        │           ├── full TLS decrypt (CA injected into agents)
+        │           ├── domain allowlist enforcement → 403 + blocked.jsonl
+        │           └── request body logging → flows.jsonl
+        │
+        └── agents  node:22
+                    ├── Claude Code
+                    ├── OpenAI Codex CLI
+                    ├── Gemini CLI
+                    └── Grok CLI
 ```
 
-## Primeiro uso
+Traffic flow: `agent → proxy (decrypt + enforce) → internet`
+Direct egress: **impossible** — `internal: true` network has no gateway.
+
+---
+
+## What gets logged
+
+| Log file | Contents |
+|---|---|
+| `logs/flows.jsonl` | Every decrypted request: host, method, path, status, body hash, body preview (512 bytes) |
+| `logs/blocked.jsonl` | Every blocked attempt: timestamp, host, method |
+| `logs/falco.jsonl` | Syscall alerts: credential reads, bypass attempts, unexpected processes |
+
+**Example — catching data exfiltration:**
+```jsonc
+// logs/blocked.jsonl — agent tried to reach unknown endpoint
+{"ts": 1783969672, "event": "blocked", "host": "telemetry.unknown-vendor.io", "method": "CONNECT", "path": "/"}
+
+// logs/flows.jsonl — body of an allowed request, fully decrypted
+{"host": "api.anthropic.com", "method": "POST", "path": "/v1/messages",
+ "req_size": 54564, "req_body_preview": "{\"model\":\"claude-opus-4\",\"messages\":[...]}"}
+
+// logs/falco.jsonl — agent read your SSH key
+{"rule": "Agent reads sensitive credentials", "priority": "Critical",
+ "output": "proc=node file=/home/agent/.ssh/id_rsa container=agents"}
+```
+
+---
+
+## Quick start
+
+**Prerequisites:** macOS arm64, [Lima](https://lima-vm.io) (`brew install lima`), Docker Desktop (for local image builds only).
 
 ```sh
-# 1. Criar .env com as API keys
-cp .env.example .env
-# edite .env com suas chaves reais
+# 1. Clone
+git clone https://github.com/thiagolmoraes/leash
+cd leash
 
-# 2. Subir VM Lima (download ~500MB Ubuntu, uma vez só)
+# 2. Add your API keys
+cp .env.example .env
+# edit .env with real keys
+
+# 3. Start the Lima VM (downloads Ubuntu 24.04, ~500MB, one time)
 make vm-up
 
-# 3. Build + subir containers
+# 4. Build images and start the stack
 make up
 ```
 
-## Uso diário
+---
+
+## Usage
 
 ```sh
-make shell          # shell interativo no container de agentes
-make ui             # abre mitmweb no browser (http://localhost:8081)
-make logs           # tail blocked + falco (últimas 20 linhas cada)
-make logs-flows     # tail contínuo de todos os flows decriptados
-make logs-blocked   # tail contínuo de domínios bloqueados
-make logs-falco     # tail contínuo de alertas Falco
+make claude        # run Claude Code inside the sandbox
+make codex         # run OpenAI Codex CLI
+make gemini        # run Gemini CLI
+make grok          # run Grok CLI
+make shell         # interactive bash as non-root agent user
+
+make ui            # open mitmweb at http://localhost:8081 (live TLS flows)
+make logs          # tail blocked.jsonl + falco.jsonl
+make logs-flows    # tail all decrypted flows
+make logs-blocked  # tail blocked attempts only
+make logs-falco    # tail Falco syscall alerts
+
+make test          # run full security test suite (19 tests)
+make restart-proxy # reload after editing proxy/policy.yaml
+make down          # stop containers
+make vm-down       # stop Lima VM
 ```
 
-## Rodar um agente específico
+---
+
+## Adjusting the allowlist
+
+Edit `proxy/policy.yaml`. Switch to `mode: observe` to profile an agent without blocking anything — useful when adding a new CLI and you need to discover what domains it legitimately needs.
+
+```yaml
+mode: enforce   # enforce | observe
+
+allow:
+  - api.anthropic.com
+  - platform.claude.com
+  - api.openai.com
+  - generativelanguage.googleapis.com
+  - api.x.ai
+  # add domains here
+```
+
+After editing:
+```sh
+make restart-proxy   # no rebuild needed — policy is volume-mounted
+```
+
+---
+
+## Falco rules
+
+Five detection rules ship by default (`falco/rules.local.yaml`):
+
+| Rule | Priority | Triggers on |
+|---|---|---|
+| Agent reads sensitive credentials | **Critical** | Read of `~/.ssh/*`, `~/.aws/*`, `~/.config/gcloud/*`, `*.pem`, `.env*` |
+| Agent direct outbound (proxy bypass) | **Critical** | TCP connect not destined for proxy |
+| Agent spawns network tool | Warning | `nc`, `ncat`, `ssh`, `scp`, `socat`, `nmap` spawned |
+| Agent writes outside workspace | Warning | File write outside `/workspace` and `/tmp` |
+| Unexpected interactive shell | Notice | TTY shell spawned by unexpected parent |
+
+Honeypot files are pre-seeded in the agent home (`~/.ssh/id_rsa`, `~/.aws/credentials`) to make credential-read detection reliable even if the agent never touches real keys.
+
+---
+
+## Test suite
 
 ```sh
-make shell
-# dentro do container:
-claude          # Claude Code
-codex           # OpenAI Codex CLI
-gemini          # Gemini CLI
-grok            # Grok CLI
+make test
 ```
 
-## Testes de verificação
+```
+── pre-flight ──
+PASS  container proxy is running
+PASS  container agents is running
+PASS  container falco is running
 
-```sh
-make test-block     # tenta acessar domínio fora da allowlist → 403
-make test-bypass    # tenta conexão direta sem proxy → falha (rede internal)
-make test-decoy     # lê ~/.ssh/id_rsa (honeypot) → alerta Falco CRITICAL
+── TLS interception ──
+PASS  TLS interception: HTTPS reaches API (HTTP 401, not SSL error)
+PASS  TLS interception: mitm CA in system trust store
+
+── egress isolation ──
+PASS  egress isolation: direct outbound blocked (no route)
+PASS  egress isolation: direct DNS bypass blocked
+
+── allowlist enforcement ──
+PASS  allowlist: blocked domain returns 403/reset
+PASS  allowlist: block logged to blocked.jsonl
+PASS  allowlist: allowed domain passes
+
+── flow logging ──
+PASS  flow logging: request logged
+PASS  flow logging: JSON has required fields
+
+── Falco detection ──
+PASS  Falco: credential read detected (rule: Agent reads sensitive credentials)
+PASS  Falco: still running after tests
+
+── filesystem isolation ──
+PASS  Falco: write outside workspace triggered alert
+
+── CLI availability ──
+PASS  CLI installed: claude
+PASS  CLI installed: codex
+PASS  CLI installed: gemini
+PASS  CLI installed: grok
+
+Results: 19 passed  0 failed  0 skipped
 ```
 
-## Fluxo de auditoria de incidente
+---
 
-1. **Identificar tentativas de exfiltração:** `logs/blocked.jsonl`
-   ```sh
-   cat logs/blocked.jsonl | python3 -c "import sys,json; [print(json.dumps(json.loads(l), indent=2)) for l in sys.stdin]"
-   ```
+## Known limitations
 
-2. **Inspecionar body das requests:** `logs/flows.jsonl`
-   ```sh
-   # Requests com body > 1KB (suspeito de exfil de dados)
-   cat logs/flows.jsonl | python3 -c "
-   import sys, json
-   for l in sys.stdin:
-       f = json.loads(l)
-       if f['req_size'] > 1024:
-           print(f['ts'], f['host'], f['req_size'], f['req_body_preview'][:200])
-   "
-   ```
+| Issue | Workaround |
+|---|---|
+| **TLS cert pinning** — CLI pins its cert, MitM breaks for that host | Add host to `ignore_hosts` in proxy config, or use `mode: observe` |
+| **OAuth login flows** — browser-based auth is awkward inside a container | Use API keys in `.env` instead of interactive login |
+| **Falco on macOS** — runs inside Lima VM kernel (Linux 6.x), not on macOS host directly | No workaround needed — eBPF works on the VM kernel |
+| **Firecracker/KVM** — not available on macOS arm64 (no hardware KVM) | Lima with Virtualization.framework provides sufficient isolation |
 
-3. **Replay no mitmweb:** abra `http://localhost:8081`, filtre por host.
+---
 
-4. **Alertas de syscall:** `logs/falco.jsonl`
-   ```sh
-   cat logs/falco.jsonl | python3 -c "
-   import sys, json
-   for l in sys.stdin:
-       e = json.loads(l)
-       if e.get('priority') in ('CRITICAL','WARNING'):
-           print(e['time'], e['rule'], e.get('output',''))
-   "
-   ```
-
-## Ajustar allowlist
-
-Edite `proxy/policy.yaml`. Mude `mode: observe` para perfilar o que um agente acessa *sem* bloquear.
-Reinicie o proxy:
-
-```sh
-limactl shell agent-lab -- bash -c "cd /sandbox-AI && docker compose restart proxy"
-```
-
-## Estrutura
+## Project structure
 
 ```
-sandbox-AI/
-├── Makefile
-├── docker-compose.yml
-├── lima/agent-lab.yaml       Lima VM (Ubuntu 24.04, vz)
+leash/
+├── Makefile                  # all commands
+├── docker-compose.yml        # proxy + agents + falco
+├── lima/agent-lab.yaml       # Lima VM definition (Ubuntu 24.04, vzNAT)
 ├── proxy/
 │   ├── Dockerfile
-│   ├── policy.yaml           allowlist de domínios
+│   ├── policy.yaml           # domain allowlist
 │   └── addons/
-│       ├── gatekeeper.py     bloqueia + loga violações
-│       └── flowlog.py        loga todos os flows decriptados
+│       ├── gatekeeper.py     # block + log violations
+│       └── flowlog.py        # log all decrypted flows
 ├── agents/
-│   ├── Dockerfile            node:22 + 4 CLIs + CA mitm + gosu
-│   └── entrypoint.sh         instala CA no boot, dropa para user agent
-├── falco/rules.local.yaml    regras de detecção custom
-├── workspace/                código que os agentes editam
-└── logs/
-    ├── flows.jsonl           todos os flows (decriptados)
-    ├── blocked.jsonl         tentativas bloqueadas
-    └── falco.jsonl           alertas de syscall
+│   ├── Dockerfile            # node:22 + 4 CLIs + mitm CA + gosu
+│   └── entrypoint.sh         # installs CA at runtime, drops to non-root
+├── falco/rules.local.yaml    # custom detection rules
+├── tests/run_tests.sh        # 19-test security suite
+├── workspace/                # mounted into agents container
+└── logs/                     # flows.jsonl, blocked.jsonl, falco.jsonl
 ```
 
-## Riscos conhecidos
+---
 
-- **Cert pinning:** se um CLI pinnar o certificado, TLS interception quebra para ele. Solução: adicionar o host ao `ignore_hosts` do mitmproxy ou rodar em modo `observe`.
-- **Grok CLI:** nome do pacote npm pode mudar. Verifique com `npm search grok-cli`.
-- **Falco no Lima:** usa `modern_ebpf` no kernel Ubuntu 24.04 (kernel 6.x). Se alertas não aparecerem, verifique `docker compose logs falco`.
+## License
+
+MIT
