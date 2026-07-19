@@ -1,0 +1,68 @@
+language: en-US
+early_access: false
+
+reviews:
+  profile: assertive
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false
+
+  path_filters:
+    - "!**/node_modules/**"
+    - "!dashboard/web-dist/**"
+    - "!dashboard/src/web/dist/**"
+    - "!**/*.lock"
+    - "!logs/**"
+    - "!workspace/**"
+
+  path_instructions:
+    - path: "proxy/addons/*.py"
+      instructions: >
+        This is the TLS-intercepting gatekeeper for an AI-agent sandbox.
+        Flag anything that could weaken the domain allowlist (suffix-match
+        bugs, bare multi-tenant domains like googleapis.com), leak secrets
+        into logs, or silently fail open instead of blocking.
+    - path: "agents/Dockerfile"
+      instructions: >
+        Verify any new CLI package installs use the real, official npm
+        package name — this repo previously shipped a fake Grok CLI
+        wrapper by mistake. Cross-check against the vendor's own docs when
+        possible.
+    - path: "dashboard/src/docker.ts"
+      instructions: >
+        This wraps a read-write Docker socket with host-Docker-equivalent
+        access. Flag any change that lets user input reach the Docker
+        Engine API without going through the existing MANAGED allowlist.
+    - path: "dashboard/src/skills.ts"
+      instructions: >
+        This clones arbitrary user-supplied git URLs and writes files into
+        volumes shared with the sandboxed agents container. Flag anything
+        resembling path traversal, command injection, or SSRF, and confirm
+        new code still routes through validateSkillUrl/validateSkillName.
+    - path: "falco/rules.local.yaml"
+      instructions: >
+        Falco detection rules for the sandbox. Flag any rule change that
+        narrows detection coverage (credential reads, proxy bypass,
+        workspace escapes) without an accompanying test in tests/run_tests.sh.
+    - path: "**/*.sh"
+      instructions: >
+        Shell scripts should stay POSIX-compatible where the shebang says
+        #!/bin/sh, and use `set -euo pipefail` (bash) or `set -eu` (sh).
+
+  tools:
+    shellcheck:
+      enabled: true
+    yamllint:
+      enabled: true
+    ruff:
+      enabled: true
+    eslint:
+      enabled: true
+
+chat:
+  auto_reply: true
