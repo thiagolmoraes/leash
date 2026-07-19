@@ -1,14 +1,18 @@
 # Lima VM: agent-lab
-# macOS arm64, Virtualization.framework (vz), Ubuntu 24.04
+# macOS arm64 or Intel, Virtualization.framework (vz), Ubuntu 24.04
 # Network: vzNAT (no socket_vmnet required)
-# Mount: only ~/Documents/sandbox-AI (rw) — rest of host invisible
+# Mount: only ~/Documents/leash (rw) — rest of host invisible
 vmType: vz
 rosetta:
   enabled: false
 
+# Lima picks the entry matching the host's arch automatically at `limactl
+# start` — no flag or host-side branching needed for Apple Silicon vs Intel.
 images:
   - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img"
     arch: aarch64
+  - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img"
+    arch: x86_64
 
 cpus: 4
 memory: 8GiB

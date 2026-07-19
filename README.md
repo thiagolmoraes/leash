@@ -9,7 +9,7 @@
 **Run AI coding agents. See everything. Control what escapes.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-00d4aa.svg?style=for-the-badge)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS%20arm64%20%7C%20Linux-0099cc.svg?style=for-the-badge)](https://github.com/thiagolmoraes/leash)
+[![Platform](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon%20%7C%20Intel)-0099cc.svg?style=for-the-badge)](https://github.com/thiagolmoraes/leash)
 [![Stack](https://img.shields.io/badge/stack-Lima%20%2B%20mitmproxy%20%2B%20Falco%20%2B%20Bun-00d4aa.svg?style=for-the-badge)](https://github.com/thiagolmoraes/leash)
 [![Tests](https://img.shields.io/badge/tests-19%20passing-00d4aa.svg?style=for-the-badge)](tests/run_tests.sh)
 
@@ -41,7 +41,7 @@ Agents run. You watch everything.
 ## Architecture
 
 ```
-macOS host (arm64)
+macOS host (Apple Silicon or Intel)
 └── Lima VM  "agent-lab"  (Ubuntu 24.04, Virtualization.framework)
     ├── Falco  ─── modern eBPF on VM kernel ──▶ logs/falco.jsonl
     └── Docker Compose
@@ -100,7 +100,7 @@ Direct egress from `agents`: **impossible** — `internal: true` network has no 
 
 ## Quick start
 
-**Prerequisites:** macOS arm64, [Lima](https://lima-vm.io) (`brew install lima`), Docker Desktop (for local image builds only).
+**Prerequisites:** macOS (Apple Silicon or Intel), [Lima](https://lima-vm.io) (`brew install lima`), Docker Desktop (for local image builds only).
 
 ```sh
 # 1. Clone
@@ -303,7 +303,8 @@ Results: 19 passed  0 failed  0 skipped
 | **TLS cert pinning** — CLI pins its cert, MitM breaks for that host | Add host to `ignore_hosts` in proxy config, or use `mode: observe` |
 | **OAuth login flows** — browser-based auth is awkward inside a container | Use API keys in `.env` instead of interactive login |
 | **Falco on macOS** — runs inside Lima VM kernel (Linux 6.x), not on macOS host directly | No workaround needed — eBPF works on the VM kernel |
-| **Firecracker/KVM** — not available on macOS arm64 (no hardware KVM) | Lima with Virtualization.framework provides sufficient isolation |
+| **Firecracker/KVM** — not available on macOS (no hardware KVM on either Apple Silicon or Intel) | Lima with Virtualization.framework provides sufficient isolation |
+| **Intel Mac support** — the Lima VM config lists an x86_64 image alongside arm64 and Lima auto-selects the right one, but this hasn't been verified on real Intel hardware yet | Please report back if you try it — that's exactly the kind of thing that needs real-world confirmation |
 
 ---
 
