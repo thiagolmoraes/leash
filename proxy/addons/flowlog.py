@@ -24,6 +24,16 @@ class Flowlog:
         # Truncate body preview to 512 bytes (avoid storing API keys / full payloads in plain log)
         body_preview = body[:512].decode("utf-8", errors="replace") if body else None
 
+        # Prefer the Content-Length header so large responses aren't fully
+        # materialized just to measure them; fall back to the decoded body.
+        resp_size = 0
+        if resp is not None:
+            cl = resp.headers.get("content-length")
+            if cl and cl.isdigit():
+                resp_size = int(cl)
+            elif resp.content:
+                resp_size = len(resp.content)
+
         entry = {
             "ts": time.time(),
             "host": req.pretty_host,
@@ -33,7 +43,7 @@ class Flowlog:
             "req_size": body_size,
             "req_body_sha256": body_hash,
             "req_body_preview": body_preview,
-            "resp_size": len(resp.content) if resp and resp.content else 0,
+            "resp_size": resp_size,
         }
 
         FLOWS_LOG.parent.mkdir(parents=True, exist_ok=True)

@@ -17,6 +17,9 @@ services:
       - ./proxy/policy.yaml:/app/policy.yaml:ro   # hot-reload: restart proxy only
     environment:
       - PYTHONUNBUFFERED=1
+      - MITMWEB_PASSWORD=${MITMWEB_PASSWORD:-}   # protects the :8081 UI; set in .env
+    env_file:
+      - .env
 
   # ── Agents (all 4 CLIs) ──────────────────────────────────────────────────
   agents:
@@ -29,6 +32,13 @@ services:
       - ./workspace:/workspace
       - ./logs:/logs
       - mitm-certs:/certs:ro   # read mitm CA cert for entrypoint install
+      # Skills installed via the dashboard land here, per harness. Named
+      # Docker volumes (not host bind mounts) — data stays inside the VM's
+      # Docker storage, never touches the macOS filesystem.
+      - skills-claude:/home/agent/.claude/skills
+      - skills-codex:/home/agent/.agents/skills
+      - skills-gemini:/home/agent/.gemini/extensions
+      - skills-grok:/home/agent/.grok/skills
     env_file:
       - .env                   # ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY, XAI_API_KEY
     environment:
@@ -67,6 +77,42 @@ services:
       - --option=file_output.filename=/logs/falco.jsonl
       - --option=log_stderr=true
 
+  # ── Dashboard (visualize + manage flows/blocked/falco/policy/skills) ─────
+  dashboard:
+    build: ./dashboard
+    container_name: dashboard
+    restart: unless-stopped
+    networks:
+      - egress   # only needs to reach the host UI + Docker socket, not jail
+    ports:
+      - "8082:8082"
+    volumes:
+      - ./logs:/logs:ro
+      - ./proxy/policy.yaml:/app/policy.yaml:rw   # only writer of policy.yaml
+      - /var/run/docker.sock:/var/run/docker.sock # NOTE: host-Docker-equivalent access, see README
+      - skills-claude:/skills/claude:rw
+      - skills-codex:/skills/codex:rw
+      - skills-gemini:/skills/gemini:rw
+      - skills-grok:/skills/grok:rw
+    environment:
+      - PORT=8082
+      - SKILLSPECTOR_URL=http://skillspector:8090
+
+  # ── SkillSpector (security scan for pasted skill/plugin URLs) ────────────
+  skillspector:
+    build: ./skillspector
+    container_name: skillspector
+    restart: unless-stopped
+    networks:
+      - egress   # needs egress to clone the scanned git repo/URL
+    environment:
+      - SKILLSPECTOR_PROVIDER=${SKILLSPECTOR_PROVIDER:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+    env_file:
+      - .env
+
 networks:
   jail:
     internal: true    # no direct egress from this network — only via proxy
@@ -75,3 +121,7 @@ networks:
 
 volumes:
   mitm-certs:
+  skills-claude:
+  skills-codex:
+  skills-gemini:
+  skills-grok:

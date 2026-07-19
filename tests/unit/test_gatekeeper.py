@@ -11,16 +11,18 @@ import textwrap
 import pytest
 
 # ---------------------------------------------------------------------------
-# Inline the allowlist-matching logic (avoids importing mitmproxy in CI)
+# Import the REAL matcher from the addon. gatekeeper.py imports mitmproxy
+# lazily (inside methods), so importing these helpers needs no mitmproxy.
 # ---------------------------------------------------------------------------
 
+sys.path.insert(
+    0, os.path.join(os.path.dirname(__file__), "..", "..", "proxy", "addons")
+)
+from gatekeeper import host_allowed, normalize_rules  # noqa: E402
+
+
 def _allowed(host: str, allow: list[str]) -> bool:
-    h = host.lower()
-    for rule in allow:
-        rule = rule.lower().lstrip(".")
-        if h == rule or h.endswith("." + rule):
-            return True
-    return False
+    return host_allowed(host, normalize_rules(allow))
 
 
 def load_policy(path: str) -> dict:

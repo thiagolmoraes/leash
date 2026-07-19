@@ -15,7 +15,7 @@ memory: 8GiB
 disk: 40GiB
 
 mounts:
-  - location: "~/Documents/sandbox-AI"
+  - location: "~/Documents/leash"
     mountPoint: "/sandbox-AI"
     writable: true
 

@@ -1,0 +1,19 @@
+{
+  "name": "leash-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --hot src/server.ts",
+    "start": "bun run src/server.ts",
+    "build:web": "cd src/web && bun run build"
+  },
+  "dependencies": {
+    "hono": "^4.6.0",
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "bun-types": "latest"
+  }
+}

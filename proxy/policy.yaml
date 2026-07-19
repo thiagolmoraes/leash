@@ -3,37 +3,29 @@
 # mode: observe  → log only, nothing blocked (use for initial profiling)
 mode: enforce
 
-# One entry per allowed host (exact or suffix match with leading dot)
+# ignore_hosts: hosts to pass through un-intercepted (no TLS MitM). Use this
+# for CLIs/hosts with certificate pinning, where decryption breaks the
+# connection outright. Regexes, matched against the hostname.
+# ignore_hosts:
+#   - pinned-api\.example\.com
+
 allow:
-  # ── Claude Code ─────────────────────────────────────────────────────────
   - api.anthropic.com
   - platform.claude.com
   - statsig.anthropic.com
-  - sentry.io        # crash reporting (common to many CLIs)
-
-  # ── OpenAI Codex ────────────────────────────────────────────────────────
   - api.openai.com
   - o1.openai.com
-
-  # ── Gemini CLI ──────────────────────────────────────────────────────────
   - generativelanguage.googleapis.com
   - oauth2.googleapis.com
   - accounts.google.com
   - cloudcode-pa.googleapis.com
-  - googleapis.com
-
-  # ── Grok (xAI) ──────────────────────────────────────────────────────────
   - api.x.ai
-
-  # ── Shared infra ────────────────────────────────────────────────────────
   - registry.npmjs.org
   - github.com
   - objects.githubusercontent.com
   - raw.githubusercontent.com
   - codeload.github.com
   - api.github.com
-
-  # ── TLS / PKI ────────────────────────────────────────────────────────────
   - ocsp.digicert.com
   - ocsp.pki.goog
   - crl.pki.goog

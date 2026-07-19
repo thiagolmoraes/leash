@@ -1,3 +1,13 @@
 .env
 logs/
 workspace/
+CLAUDE.local.md
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+
+# Dashboard (bun/node + vite build artifacts)
+dashboard/node_modules/
+dashboard/src/web/node_modules/
+dashboard/web-dist/
+dashboard/src/web/dist/
+dashboard/src/web/tsconfig.tsbuildinfo

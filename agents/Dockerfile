@@ -19,16 +19,16 @@ ENV NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/mitm-ca.crt
 ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
-# Install all 4 agent CLIs globally
+# Install all 4 agent CLIs globally.
+# Grok: @xai-official/grok is xAI's real "Grok Build" CLI (bin: grok).
+# Do NOT fall back to the unscoped `grok-cli` package — it's an unrelated
+# community wrapper ("starts anthropic-proxy with Grok model and runs
+# claude-code") that silently runs Claude Code while claiming to be Grok.
 RUN npm install -g \
       @anthropic-ai/claude-code \
       @openai/codex \
       @google/gemini-cli \
-    && npm install -g \
-      # Grok CLI — xAI official package name as of 2026-06
-      @xai-org/grok-cli 2>/dev/null || \
-      npm install -g grok-cli 2>/dev/null || \
-      echo "WARN: grok-cli package name may have changed — check manually"
+      @xai-official/grok
 
 # Non-root user
 RUN useradd -ms /bin/bash agent
